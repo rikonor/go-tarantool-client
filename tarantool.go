@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	tarantoolURL = "http://sh6.tarantool.org/tarantool"
+	tarantoolURL = "http://avro.tarantool.org/tarantool"
 )
 
 const (
