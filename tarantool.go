@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 )
 
@@ -35,6 +36,18 @@ type response struct {
 	Error  responseError   `json:"error"`
 }
 
+type ServiceError struct {
+	err error
+}
+
+func newServiceError(err error) error {
+	return &ServiceError{err}
+}
+
+func (e *ServiceError) Error() string {
+	return e.err.Error()
+}
+
 // Validate takes an Avro schema and validates it using the online
 // Tarantool Avro schema validator endpoint
 func Validate(schema string) error {
@@ -59,10 +72,16 @@ func Validate(schema string) error {
 	// Call the Tarantool validator
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok {
+			if netErr.Temporary() {
+				return newServiceError(err)
+			}
+		}
+
 		return err
 	}
 	if res.StatusCode != 200 {
-		return fmt.Errorf("bad response")
+		return newServiceError(fmt.Errorf("bad response from server: %d", res.StatusCode))
 	}
 
 	// parse the response
@@ -74,7 +93,7 @@ func Validate(schema string) error {
 
 	// Make sure the op did not error out
 	if validationRes.Error != responseErrorZero {
-		return fmt.Errorf("Failed %+v", validationRes.Error)
+		return fmt.Errorf("failed %+v", validationRes.Error)
 	}
 
 	// extract the op result
@@ -87,8 +106,8 @@ func Validate(schema string) error {
 	case resultOK:
 		return nil
 	case resultInvalidJSON:
-		return fmt.Errorf("Invalid JSON")
+		return fmt.Errorf("invalid JSON")
 	default:
-		return fmt.Errorf("Error: %s", opRes)
+		return fmt.Errorf("result: %s", opRes)
 	}
 }
