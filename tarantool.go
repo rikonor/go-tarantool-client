@@ -35,46 +35,16 @@ type response struct {
 	Error  responseError   `json:"error"`
 }
 
-type ThirdPartyError struct {
-	s string
+type ServiceError struct {
+	err error
 }
 
-func newThirdPartyError(msg interface{}, args ...interface{}) error {
-	switch msg.(type) {
-	case error:
-		s, _ := msg.(error)
-		return &ThirdPartyError{s: s.Error()}
-	case string:
-		s, _ := msg.(string)
-		return &ThirdPartyError{s: fmt.Sprintf(s, args...)}
-	default:
-		panic("unimplemented type")
-	}
+func newServiceError(err error) error {
+	return &ServiceError{err}
 }
 
-func (e *ThirdPartyError) Error() string {
-	return e.s
-}
-
-type AvroSchemaError struct {
-	s string
-}
-
-func newAvroSchemaError(msg interface{}, args ...interface{}) error {
-	switch msg.(type) {
-	case error:
-		s, _ := msg.(error)
-		return &AvroSchemaError{s: s.Error()}
-	case string:
-		s, _ := msg.(string)
-		return &AvroSchemaError{s: fmt.Sprintf(s, args...)}
-	default:
-		panic("unimplemented type")
-	}
-}
-
-func (e *AvroSchemaError) Error() string {
-	return e.s
+func (e *ServiceError) Error() string {
+	return e.err.Error()
 }
 
 // Validate takes an Avro schema and validates it using the online
@@ -89,48 +59,48 @@ func Validate(schema string) error {
 
 	reqBody, err := json.Marshal(validationReq)
 	if err != nil {
-		return newAvroSchemaError(err)
+		return err
 	}
 
 	// Setup the request
 	req, err := http.NewRequest(http.MethodPost, tarantoolURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return newThirdPartyError(err)
+		return newServiceError(err)
 	}
 
 	// Call the Tarantool validator
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return newThirdPartyError(err)
+		return newServiceError(err)
 	}
 	if res.StatusCode != 200 {
-		return newThirdPartyError("bad response from server: %d", res.StatusCode)
+		return newServiceError(fmt.Errorf("bad response from server: %d", res.StatusCode))
 	}
 
 	// parse the response
 	var validationRes response
 	if err := json.NewDecoder(res.Body).Decode(&validationRes); err != nil {
-		return newAvroSchemaError(err)
+		return err
 	}
 	defer res.Body.Close()
 
 	// Make sure the op did not error out
 	if validationRes.Error != responseErrorZero {
-		return newAvroSchemaError("failed %+v", validationRes.Error)
+		return fmt.Errorf("failed %+v", validationRes.Error)
 	}
 
 	// extract the op result
 	opRes, ok := validationRes.Result[0][0].(string)
 	if !ok {
-		return newAvroSchemaError("Unknown Result: %s", validationRes.Result[0][0])
+		return fmt.Errorf("Unknown Result: %s", validationRes.Result[0][0])
 	}
 
 	switch opRes {
 	case resultOK:
 		return nil
 	case resultInvalidJSON:
-		return newAvroSchemaError("invalid JSON")
+		return fmt.Errorf("invalid JSON")
 	default:
-		return newAvroSchemaError("result: %s", opRes)
+		return fmt.Errorf("result: %s", opRes)
 	}
 }
