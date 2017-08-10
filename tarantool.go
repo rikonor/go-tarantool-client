@@ -44,7 +44,7 @@ func newServiceError(err error) error {
 	return &ServiceError{err}
 }
 
-func (e *ServiceError) Error() string {
+func (e ServiceError) Error() string {
 	return e.err.Error()
 }
 
