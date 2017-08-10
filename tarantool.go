@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 )
 
@@ -65,13 +66,19 @@ func Validate(schema string) error {
 	// Setup the request
 	req, err := http.NewRequest(http.MethodPost, tarantoolURL, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return newServiceError(err)
+		return err
 	}
 
 	// Call the Tarantool validator
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return newServiceError(err)
+		if netErr, ok := err.(net.Error); ok {
+			if netErr.Temporary() {
+				return newServiceError(err)
+			}
+		}
+
+		return err
 	}
 	if res.StatusCode != 200 {
 		return newServiceError(fmt.Errorf("bad response from server: %d", res.StatusCode))
